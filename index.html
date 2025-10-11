@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trend Runner</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #87CEEB; /* Sky Blue */
+            font-family: 'Helvetica Neue', sans-serif;
+        }
+        canvas {
+            border: 2px solid #2c3e50;
+            border-radius: 10px;
+            /* A subtle gradient for the background */
+            background: linear-gradient(to bottom, #87CEEB, #E0F8FF);
+        }
+        #gameOverScreen {
+            display: none;
+            position: absolute;
+            text-align: center;
+            background-color: rgba(44, 62, 80, 0.85);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+        #gameOverScreen h2 {
+            margin: 0 0 15px;
+            font-size: 2.5em;
+        }
+        #restartButton, #shareButton {
+            padding: 12px 25px;
+            font-size: 18px;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            margin: 10px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        #restartButton:hover, #shareButton:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        #restartButton {
+            background-color: #2ecc71; /* Emerald */
+            color: white;
+        }
+        #shareButton {
+            background-color: #3498db; /* Peter River */
+            color: white;
+            text-decoration: none;
+        }
+        #gameContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #colorPalette {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 10px;
+        }
+        #colorPalette h3 {
+            margin: 0 0 10px;
+            text-align: center;
+            color: #2c3e50;
+        }
+        #colors {
+            display: flex;
+            gap: 10px;
+        }
+        .color-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .color-box.selected {
+            border-color: #2c3e50;
+            transform: scale(1.1);
+        }
+        .color-box.locked {
+            background-color: #bdc3c7 !important;
+            cursor: not-allowed;
+            position: relative;
+        }
+        .color-box.locked::after {
+            content: '🔒';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        <div id="colorPalette">
+            <h3>Karakter Rengi</h3>
+            <div id="colors"></div>
+        </div>
+    </div>
+    <div id="gameOverScreen">
+        <h2>Oyun Bitti!</h2>
+        <p>Skorun: <span id="finalScore">0</span></p>
+        <button id="restartButton">Tekrar Başla</button>
+        <button id="shareButton">Skoru Paylaş</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalScoreEl = document.getElementById('finalScore');
+        const restartButton = document.getElementById('restartButton');
+        const shareButton = document.getElementById('shareButton');
+        const colorsContainer = document.getElementById('colors');
+
+        // --- AUDIO ---
+        let audioCtx;
+        function playSound(type) {
+            if (!audioCtx) {
+                // AudioContext'i kullanıcı etkileşimiyle başlatmak en iyisidir.
+                // Zıplama ilk etkileşim olacağı için burada oluşturuyoruz.
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (!audioCtx) return; // Web Audio API desteklenmiyorsa devam etme.
+
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            if (type === 'jump') {
+                oscillator.type = 'triangle';
+                oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // A4 note
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.2);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.2);
+            } else if (type === 'gameOver') {
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(220, audioCtx.currentTime); // A3 note
+                gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.5);
+            }
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+        }
+        // --- END AUDIO ---
+
+        // --- META LAYER: COLOR UNLOCKS ---
+        const colorUnlocks = [
+            { color: '#f1c40f', score: 0 },    // Sunflower (Default)
+            { color: '#2ecc71', score: 1000 }, // Emerald
+            { color: '#3498db', score: 2500 }, // Peter River
+            { color: '#9b59b6', score: 5000 }, // Amethyst
+            { color: '#e74c3c', score: 10000 }  // Alizarin
+        ];
+        let unlockedColors = [];
+        let selectedColor = colorUnlocks[0].color;
+        // --- END META LAYER ---
+
+        // Player
+        const player = {
+            x: 50,
+            y: canvas.height - 50,
+            width: 40,
+            height: 40,
+            color: selectedColor,
+            velocityY: 0,
+            gravity: 0.6,
+            jumpStrength: -14,
+            isJumping: false
+        };
+
+        // Obstacles
+        let obstacles = [];
+        let baseSpeed = 4;
+        let obstacleSpeed = baseSpeed;
+        let obstacleFrequency = 100; // frames
+        let frameCount = 0;
+
+        // Score
+        let score = 0;
+        let gameOver = false;
+
+        // --- LOCALSTORAGE & PROGRESS ---
+        function saveProgress() {
+            localStorage.setItem('trendRunnerUnlockedColors', JSON.stringify(unlockedColors));
+            localStorage.setItem('trendRunnerSelectedColor', selectedColor);
+        }
+
+        function loadProgress() {
+            const savedUnlocked = localStorage.getItem('trendRunnerUnlockedColors');
+            const savedSelected = localStorage.getItem('trendRunnerSelectedColor');
+
+            if (savedUnlocked) {
+                unlockedColors = JSON.parse(savedUnlocked);
+            } else {
+                unlockedColors = [colorUnlocks[0].color]; // Unlock default
+            }
+
+            if (savedSelected && unlockedColors.includes(savedSelected)) {
+                selectedColor = savedSelected;
+            } else {
+                selectedColor = unlockedColors[0];
+            }
+            player.color = selectedColor;
+        }
+        // --- END LOCALSTORAGE ---
+
+        // --- UI & DRAWING ---
+        function populateColorPalette() {
+            colorsContainer.innerHTML = '';
+            colorUnlocks.forEach(item => {
+                const colorBox = document.createElement('div');
+                colorBox.classList.add('color-box');
+                colorBox.style.backgroundColor = item.color;
+
+                if (unlockedColors.includes(item.color)) {
+                    if (item.color === selectedColor) {
+                        colorBox.classList.add('selected');
+                    }
+                    colorBox.addEventListener('click', () => {
+                        selectedColor = item.color;
+                        player.color = selectedColor;
+                        saveProgress();
+                        populateColorPalette(); // Repopulate to show selection
+                    });
+                } else {
+                    colorBox.classList.add('locked');
+                    colorBox.title = `${item.score} skorda açılır`;
+                }
+                colorsContainer.appendChild(colorBox);
+            });
+        }
+
+        function drawRoundedRect(x, y, width, height, radius, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawPlayer() {
+            drawRoundedRect(player.x, player.y, player.width, player.height, 10, player.color);
+        }
+
+        function drawObstacles() {
+            obstacles.forEach(obstacle => {
+                drawRoundedRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height, 5, '#c0392b'); // Obstacle color
+            });
+        }
+
+        function drawScore() {
+            ctx.fillStyle = '#2c3e50'; // Midnight Blue
+            ctx.font = '28px "Helvetica Neue", sans-serif';
+            ctx.fillText(`Skor: ${Math.floor(score)}`, 20, 40);
+        }
+        // --- END UI & DRAWING ---
+
+        // --- GAME LOGIC ---
+        function updatePlayer() {
+            player.velocityY += player.gravity;
+            player.y += player.velocityY;
+
+            if (player.y + player.height > canvas.height) {
+                player.y = canvas.height - player.height;
+                player.velocityY = 0;
+                player.isJumping = false;
+            }
+        }
+
+        function updateObstacles() {
+            frameCount++;
+            if (frameCount % obstacleFrequency === 0) {
+                const minHeight = 50;
+                const maxHeight = 160;
+                const height = Math.floor(Math.random() * (maxHeight - minHeight + 1)) + minHeight;
+                obstacles.push({
+                    x: canvas.width,
+                    y: canvas.height - height,
+                    width: 45,
+                    height: height
+                });
+            }
+
+            obstacles.forEach(obstacle => {
+                obstacle.x -= obstacleSpeed;
+            });
+
+            obstacles = obstacles.filter(obstacle => obstacle.x + obstacle.width > 0);
+        }
+
+        function checkCollision() {
+            obstacles.forEach(obstacle => {
+                if (
+                    player.x < obstacle.x + obstacle.width &&
+                    player.x + player.width > obstacle.x &&
+                    player.y < obstacle.y + obstacle.height &&
+                    player.y + player.height > obstacle.y
+                ) {
+                    endGame();
+                }
+            });
+        }
+
+        function updateScore() {
+            score += 0.1 * obstacleSpeed;
+        }
+
+        function updateDifficulty() {
+            obstacleSpeed = baseSpeed + Math.floor(score / 500) * 0.5;
+        }
+
+        function checkUnlocks() {
+            const currentScore = Math.floor(score);
+            let newUnlock = false;
+            colorUnlocks.forEach(item => {
+                if (currentScore >= item.score && !unlockedColors.includes(item.color)) {
+                    unlockedColors.push(item.color);
+                    newUnlock = true;
+                }
+            });
+            if (newUnlock) {
+                saveProgress();
+                populateColorPalette();
+            }
+        }
+
+        function gameLoop() {
+            if (gameOver) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            updatePlayer();
+            drawPlayer();
+
+            updateObstacles();
+            drawObstacles();
+
+            checkCollision();
+            updateScore();
+            updateDifficulty();
+            drawScore();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function jump() {
+            if (!player.isJumping) {
+                playSound('jump');
+                player.velocityY = player.jumpStrength;
+                player.isJumping = true;
+            }
+        }
+
+        function endGame() {
+            if (gameOver) return; // Sadece bir kez tetiklenmesini sağla
+            gameOver = true;
+            playSound('gameOver');
+            checkUnlocks(); // Check for new unlocks before showing screen
+            finalScoreEl.innerText = Math.floor(score);
+            gameOverScreen.style.display = 'flex';
+            gameOverScreen.style.flexDirection = 'column';
+            gameOverScreen.style.justifyContent = 'center';
+            gameOverScreen.style.alignItems = 'center';
+        }
+
+        function resetGame() {
+            player.y = canvas.height - player.height;
+            player.velocityY = 0;
+            player.color = selectedColor; // Ensure player has the selected color on reset
+            obstacles = [];
+            score = 0;
+            obstacleSpeed = baseSpeed;
+            frameCount = 0;
+            gameOver = false;
+            gameOverScreen.style.display = 'none';
+            gameLoop();
+        }
+
+        function init() {
+            loadProgress();
+            populateColorPalette();
+            gameLoop();
+        }
+
+        // Event Listeners
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && !gameOver) {
+                jump();
+            }
+        });
+
+        restartButton.addEventListener('click', resetGame);
+
+        shareButton.addEventListener('click', () => {
+            const shareText = `Trend Runner oyununda ${Math.floor(score)} puan aldım! Sen de oyna!`;
+            navigator.clipboard.writeText(shareText).then(() => {
+                const originalText = shareButton.innerText;
+                shareButton.innerText = 'Kopyalandı!';
+                setTimeout(() => {
+                    shareButton.innerText = originalText;
+                }, 2000);
+            }).catch(err => {
+                console.error('Panoya kopyalanamadı: ', err);
+            });
+        });
+
+        // Start the game
+        init();
+    </script>
+</body>
+</html>
