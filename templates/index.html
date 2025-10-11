@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Çağrı Kalitesi Analiz DemOSU</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .card {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .results-card {
+            background-color: #ffffff;
+        }
+        .sentiment-neg {
+            color: #dc3545; /* Kırmızı */
+        }
+        .sentiment-pos {
+            color: #198754; /* Yeşil */
+        }
+        .sentiment-neu {
+            color: #6c757d; /* Gri */
+        }
+        .progress-bar {
+            transition: width 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+    <div class="container my-5">
+        <div class="card p-4">
+            <h1 class="text-center mb-4">Çağrı Kalitesi Analiz DemOSU</h1>
+            <p class="text-center text-muted">Aşağıdaki alana bir çağrı merkezi transkripti yapıştırın ve "Analiz Et" butonuna tıklayın. Metin, "Agent:" ve "Customer:" satırları içermelidir.</p>
+            <form action="/" method="post">
+                <div class="mb-3">
+                    <textarea class="form-control" id="transcript" name="transcript" rows="10" placeholder="Agent: Merhaba, nasıl yardımcı olabilirim?&#10;Customer: Merhaba, internetim çalışmıyor...">{{ request.form.transcript or '' }}</textarea>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary btn-lg">Analiz Et</button>
+                </div>
+            </form>
+        </div>
+
+        {% if results %}
+        <div class="card p-4 mt-5 results-card">
+            <h2 class="text-center mb-4">Analiz Sonuçları</h2>
+
+            <!-- Sentiment Analysis -->
+            <div class="mb-4">
+                <h4 class="mb-3">Müşteri Duygu Analizi</h4>
+                <div class="d-flex justify-content-around text-center">
+                    <div>
+                        <p class="h3 sentiment-pos">{{ "%.0f"|format(results.sentiment.pos * 100) }}%</p>
+                        <p class="text-muted">Pozitif</p>
+                    </div>
+                    <div>
+                        <p class="h3 sentiment-neu">{{ "%.0f"|format(results.sentiment.neu * 100) }}%</p>
+                        <p class="text-muted">Nötr</p>
+                    </div>
+                    <div>
+                        <p class="h3 sentiment-neg">{{ "%.0f"|format(results.sentiment.neg * 100) }}%</p>
+                        <p class="text-muted">Negatif</p>
+                    </div>
+                </div>
+                <div class="progress mt-2" style="height: 25px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: {{ results.sentiment.pos * 100 }}%" aria-valuenow="{{ results.sentiment.pos * 100 }}" aria-valuemin="0" aria-valuemax="100"></div>
+                    <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ results.sentiment.neu * 100 }}%" aria-valuenow="{{ results.sentiment.neu * 100 }}" aria-valuemin="0" aria-valuemax="100"></div>
+                    <div class="progress-bar bg-danger" role="progressbar" style="width: {{ results.sentiment.neg * 100 }}%" aria-valuenow="{{ results.sentiment.neg * 100 }}" aria-valuemin="0" aria-valuemax="100"></div>
+                </div>
+                <p class="text-center mt-2"><strong>Bileşik Skor:</strong> {{ "%.2f"|format(results.sentiment.compound) }}</p>
+            </div>
+            <hr>
+            <!-- Talk Ratios -->
+            <div class="mb-4">
+                <h4 class="mb-3">Konuşma Oranları</h4>
+                 <div class="progress" style="height: 30px;">
+                    <div class="progress-bar" role="progressbar" style="width: {{ results.metrics.agent_talk_ratio }}%; background-color: #0d6efd;" aria-valuenow="{{ results.metrics.agent_talk_ratio }}">{{ "%.1f"|format(results.metrics.agent_talk_ratio) }}% Temsilci</div>
+                    <div class="progress-bar" role="progressbar" style="width: {{ results.metrics.customer_talk_ratio }}%; background-color: #198754;" aria-valuenow="{{ results.metrics.customer_talk_ratio }}">{{ "%.1f"|format(results.metrics.customer_talk_ratio) }}% Müşteri</div>
+                </div>
+            </div>
+            <hr>
+            <!-- Other Metrics -->
+            <div>
+                <h4 class="mb-3">Diğer Metrikler</h4>
+                <div class="row text-center">
+                    <div class="col-md-4">
+                        <p class="h4">{{ results.metrics.total_word_count }}</p>
+                        <p class="text-muted">Toplam Kelime</p>
+                    </div>
+                    <div class="col-md-4">
+                        <p class="h4">{{ results.summary.agent_lines_count }}</p>
+                        <p class="text-muted">Temsilci Konuşma Sayısı</p>
+                    </div>
+                    <div class="col-md-4">
+                        <p class="h4">{{ results.summary.customer_lines_count }}</p>
+                        <p class="text-muted">Müşteri Konuşma Sayısı</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
